@@ -135,8 +135,8 @@
   pinMode(0, INPUT);//SS RX
   pinMode(1, OUTPUT);//SS TX
   pinMode(A0, OUTPUT);//sim Reset
-  digitalWrite(A0, HIGH);
   digitalWrite(A2, HIGH);
+  digitalWrite(A0, HIGH);
   powerUp();
   Serial.begin(4800);
   turnOnGns();
@@ -159,23 +159,22 @@ void loop() {
         if(ping){t3=t2;}else{httpPostMaster();}
       }
   }else {//if(digitalRead(8))
-    httpPing();gps();
-    if(!ping){httpPostMaster();}
+    httpPing();
+    if(!ping){gps();httpPostMaster();
+      }else{
+      resetSS();
+      httpPing();
+      if(!ping){gps();httpPostMaster();}
+    }
     httpPostCustom('0');
     powerDown();
     attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(intPin), IntRoutine, RISING);
     Serial.flush();
     while (wakeUpCounter <= iterations) {
-      // Wire.beginTransmission(8);
-      // Wire.write('f');
-      // Wire.endTransmission();
       LowPower.idle(SLEEP_8S, ADC_OFF, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, SPI_OFF, USART0_ON, TWI_OFF);
       wakeUpCounter++;
     }
     if (wakeUpCounter != (iterations+1)) {                  //Vehicule ignition wakeup
-      // Wire.beginTransmission(8);
-      // Wire.write('n');
-      // Wire.endTransmission();
       powerUp();turnOnGns(); gprsOn(); 
       wakeUpCounter = 0;
       httpPostCustom('1');
@@ -192,12 +191,20 @@ void httpPostMaster(){
       clearMemoryDiff(0,getCounter()*66);
       clearMemoryDebug(32003);
       t3 = t2;
+    }else{
+      uint8_t j=0;
+      while (ping&&(j<3)){gps();httpPing();gps();j++;}
+      if (j==3){resetSS();}
     }
   }else{
     uint16_t repetitions=getCounter()/limitToSend;
     for (uint16_t i = 1; i<=repetitions; i++){
       if(getBatchCounter(i)==1){
         if(httpPostFromTo((i-1)*limitToSend,((i)*limitToSend))){writeDataFramDebug("0",(32080+i));
+        }else{
+          uint8_t j=0;
+          while (ping&&(j<3)){gps();httpPing();gps();j++;}
+          if (j==3){resetSS();}
         }
         gps();
         repetitions=getCounter()/limitToSend;
