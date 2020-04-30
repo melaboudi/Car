@@ -66,7 +66,10 @@
   //6  25----4Points 8secondsSend
 
   int badCharCounter=0;
-  uint16_t httpTimeout=8000;
+
+  uint16_t httpTimeout=11000;  //voiture 07
+  // uint16_t httpTimeout=13000;  //voiture 43
+  // uint16_t httpTimeout=15000;  //voiture 18
   uint64_t lastSend =0;
   uint16_t reps=0;
   char* one="1";
@@ -123,36 +126,36 @@
   void hardResetSS();
   int getBatchCounter(uint16_t i);
   bool gps();
-  int limitToSend =7;
+  int limitToSend =5;
   unsigned long te = 28; //le temps entre les envoies
   String previousUnixTime="";
   uint16_t iterations=440; //sleeping time = iterations X 8 Seconds
   void setup() {
-  delay(100);
-  fram.begin();
-  pinMode(A2, OUTPUT);//VIO
-  pinMode(A3, INPUT);//sim Power Status
-  pinMode(0, INPUT);//SS RX
-  pinMode(1, OUTPUT);//SS TX
-  pinMode(A0, OUTPUT);//sim Reset
-  digitalWrite(A2, HIGH);
-  digitalWrite(A0, HIGH);
-  powerUp();
-  Serial.begin(4800);
-  turnOnGns();
-  getImei();
-  while (getGsmStat() != 1) {
-    delay(500);
-  }
-  gprsOn();
-  attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(intPin), IntRoutine, RISING);
-  writeDataFramDebug("x",32080);
+    delay(100);
+    fram.begin();
+    pinMode(A2, OUTPUT);//VIO
+    pinMode(A3, INPUT);//sim Power Status
+    pinMode(0, INPUT);//SS RX
+    pinMode(1, OUTPUT);//SS TX
+    pinMode(A0, OUTPUT);//sim Reset
+    digitalWrite(A2, HIGH);
+    digitalWrite(A0, HIGH);
+    powerUp();
+    Serial.begin(4800);
+    turnOnGns();
+    getImei();
+    while (getGsmStat() != 1) {
+      delay(500);
+    }
+    gprsOn();
+    attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(intPin), IntRoutine, RISING);
+    writeDataFramDebug("x",32080);
   }
 
 void loop() {
   if(getCounter()>380){clearMemory(31999);clearMemoryDebug(32003);}
   enablePinChangeInterrupt(digitalPinToPinChangeInterrupt(intPin));
-  if (digitalRead(8)) {
+  if (!digitalRead(8)) {
       gps();
       if((t2 - t3) >= (te-8)){
         httpPing();gps();
@@ -202,6 +205,7 @@ void httpPostMaster(){
       if(getBatchCounter(i)==1){
         if(httpPostFromTo((i-1)*limitToSend,((i)*limitToSend))){writeDataFramDebug("0",(32080+i));
         }else{
+          t3=t2;
           uint8_t j=0;
           while (ping&&(j<3)){gps();httpPing();gps();j++;}
           if (j==3){resetSS();}
