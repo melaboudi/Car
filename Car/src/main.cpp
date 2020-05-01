@@ -67,9 +67,9 @@
 
   int badCharCounter=0;
 
-  uint16_t httpTimeout=11000;  //voiture 07
-  // uint16_t httpTimeout=13000;  //voiture 43
-  // uint16_t httpTimeout=15000;  //voiture 18
+  // uint16_t httpTimeout=11000;  //voiture 43
+  uint16_t httpTimeout=15000;  //voiture 07
+  // uint16_t httpTimeout=8000;  //voiture 18
   uint64_t lastSend =0;
   uint16_t reps=0;
   char* one="1";
@@ -126,7 +126,7 @@
   void hardResetSS();
   int getBatchCounter(uint16_t i);
   bool gps();
-  int limitToSend =5;
+  int limitToSend =10;
   unsigned long te = 28; //le temps entre les envoies
   String previousUnixTime="";
   uint16_t iterations=440; //sleeping time = iterations X 8 Seconds
@@ -159,7 +159,7 @@ void loop() {
       gps();
       if((t2 - t3) >= (te-8)){
         httpPing();gps();
-        if(ping){t3=t2;}else{httpPostMaster();}
+        if(ping){t3=t2;}else{t3 = t2;httpPostMaster();}
       }
   }else {//if(digitalRead(8))
     httpPing();
@@ -193,40 +193,29 @@ void httpPostMaster(){
     if(httpPostFromTo(0,getCounter())){
       clearMemoryDiff(0,getCounter()*66);
       clearMemoryDebug(32003);
-      t3 = t2;
     }else{
       uint8_t j=0;
       while (ping&&(j<3)){gps();httpPing();gps();j++;}
       if (j==3){resetSS();}
     }
   }else{
-    uint16_t repetitions=getCounter()/limitToSend;
-    for (uint16_t i = 1; i<=repetitions; i++){
-      if(getBatchCounter(i)==1){
-        if(httpPostFromTo((i-1)*limitToSend,((i)*limitToSend))){writeDataFramDebug("0",(32080+i));
-        }else{
-          t3=t2;
-          uint8_t j=0;
-          while (ping&&(j<3)){gps();httpPing();gps();j++;}
-          if (j==3){resetSS();}
-        }
-        gps();
-        repetitions=getCounter()/limitToSend;
-      }
-    }
-    bool finiShed=true;
-    for (uint8_t i = 1; i <= (getCounter()/limitToSend); i++){if (getBatchCounter(i)==1){finiShed=false;}}
-    if(finiShed){
+    uint16_t k = 0;
+    for (uint16_t i = 1; i<=(getCounter()/limitToSend); i++){if(getBatchCounter(i)==1){k=i;}}
+    if (k!=0)
+    {
+      if(httpPostFromTo((k-1)*limitToSend,((k)*limitToSend))){writeDataFramDebug("0",(32080+k));
+      }else{uint8_t j=0;while (ping&&(j<3)){gps();httpPing();gps();j++;}if (j==3){resetSS();}}
+    }else{
       if((getCounter()%limitToSend)!=0){
         uint16_t reps= getCounter()/limitToSend;         
           if(httpPostFromTo(reps*limitToSend,getCounter())){
             clearMemoryDiff(0,getCounter()*66); 
             clearMemoryDebug(32003);
-            t3 = t2;} 
+          } 
       }else{
         clearMemoryDiff(0,getCounter()*66); 
         clearMemoryDebug(32003);
-        t3 = t2;}
+      }
     }
   }
 }
