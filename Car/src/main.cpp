@@ -1,17 +1,15 @@
-//inits
-  #include "arduino.h"
+//init  
+  #include "timestamp32bits.h"
   #include "LowPower.h"
-
   #include "PinChangeInterrupt.h"
-  //#define intPin A4
+  #include "Adafruit_FRAM_I2C.h"
   #define intPin 8
   volatile bool flag=false;
   bool received=false;
-
-  #include "Adafruit_FRAM_I2C.h"
   Adafruit_FRAM_I2C fram     = Adafruit_FRAM_I2C();
   uint16_t          framAddr = 0;
   unsigned long framWritePosition = 0;
+  unsigned long framWritePositionPostpone = 0;
   unsigned long framWritePositionDebug = 32000;
   int insertCounter = 0;
   String fixStatus = " ";
@@ -26,7 +24,6 @@
   String lastUnixTime = " ";
   char Buffer[10] = {0};
   String speed = " ";
-  #include "timestamp32bits.h"
   String imei = " ";
   int fixState = 0;
   int gnsState = 0;
@@ -64,14 +61,10 @@
   //6  34----6points 8secondsSend
   //6  29----5points 8.5secondsSent
   //6  25----4Points 8secondsSend
-
   int badCharCounter=0;
-
-  // uint16_t httpTimeout=11000;  //voiture 43
-  uint16_t httpTimeout=15000;  //voiture 07
-  // uint16_t httpTimeout=8000;  //voiture 18
+  uint16_t httpTimeout=7000;  //voiture 07
   uint64_t lastSend =0;
-  uint16_t reps=0;
+  // uint16_t reps=0;
   char* one="1";
   char* zero="0";
   bool ping=true;
@@ -104,32 +97,33 @@
   void writeDataFramDebug(char* dataFram, long p1);
   void powerUp();
   void powerDown();
-  void blinkLED(int k);
-  void blinkLEDFast(int k);
   void simHardReset();
-  void clearMemory(int size);
-  void clearMemoryDiff(int size, int size1);
-  void clearMemoryDebug(unsigned long size);
+  void clearMemory(uint16_t from, uint16_t to);
+  void clearMemoryDiff(uint16_t size, uint16_t size1);
+  void resetCounter(uint16_t position, uint16_t size);
   void insertMem();
-  void incrementCounter();
+  void incrementCounter(uint16_t position, uint16_t increment);
   String complete(String s, int t);
-  int getCounter();
+  int getCounter(uint16_t initPos,uint8_t length);
   int getValue(uint16_t position, uint8_t largeur);
   void incrementValue(uint16_t position, uint8_t largeur);
   bool sendAtFram(long timeout, uint16_t pos1, uint16_t pos2, char* Rep, char* Error, int nbRep);
   bool fireHttpAction(long timeout, char* Commande, char* Rep, char* Error);
   void trace(unsigned long unixTime, uint8_t type);
   void clearValue();
-  bool insertGpsData();
   void resetSS();
   void cfunReset();
   void hardResetSS();
   int getBatchCounter(uint16_t i);
   bool gps();
+  void getWriteFromFramFromCustom(uint16_t from, uint16_t to,uint16_t wPosition);
+  bool httpPostFromToSlow(uint16_t p1, uint16_t p2);
+
   int limitToSend =10;
-  unsigned long te = 28; //le temps entre les envoies
+  unsigned long te = 46; //le temps entre les envoies
   String previousUnixTime="";
-  uint16_t iterations=440; //sleeping time = iterations X 8 Seconds
+  uint16_t iterations=5; //sleeping time = iterations X 8 Seconds
+  // uint16_t postponeCounter=0;
   void setup() {
     delay(100);
     fram.begin();
@@ -149,73 +143,122 @@
     }
     gprsOn();
     attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(intPin), IntRoutine, RISING);
-    writeDataFramDebug("x",32080);
   }
-
+//1980 30 pts @SizeRecc/pt
 void loop() {
-  if(getCounter()>380){clearMemory(31999);clearMemoryDebug(32003);}
-  enablePinChangeInterrupt(digitalPinToPinChangeInterrupt(intPin));
-  if (!digitalRead(8)) {
-      gps();
-      if((t2 - t3) >= (te-8)){
-        httpPing();gps();
-        if(ping){t3=t2;}else{t3 = t2;httpPostMaster();}
-      }
-  }else {//if(digitalRead(8))
-    httpPing();
-    if(!ping){gps();httpPostMaster();
+  if(getCounter(32004,3)>=430){clearMemory(0,32004);resetCounter(32004,3);resetCounter(32000,3);resetSS();}
+    enablePinChangeInterrupt(digitalPinToPinChangeInterrupt(intPin));
+    if (digitalRead(8)) {
+        gps();
+        if((t2 - t3) >= (te-8)){t3 = t2;
+          httpPing();gps();
+          if (!ping)
+          {
+            if(!httpPostFromTo(0,getCounter(32000,3))){
+              getWriteFromFramFromCustom(0,getCounter(32000,3)*SizeRec,1980+(getCounter(32004,3)*SizeRec));
+              incrementCounter(32004,getCounter(32000,3));
+            }
+            clearMemory(0,getCounter(32000,3)*SizeRec);     
+            resetCounter(32000,3);                          
+          }else{
+            getWriteFromFramFromCustom(0,getCounter(32000,3)*SizeRec,1980+(getCounter(32004,3)*SizeRec));
+            incrementCounter(32004,getCounter(32000,3));
+            clearMemory(0,getCounter(32000,3)*SizeRec);     
+            resetCounter(32000,3);                          
+          }
+        }
+    }else {//if(!digitalRead(8))
+      if (getCounter(32000,3)>0){
+        getWriteFromFramFromCustom(0,getCounter(32000,3)*SizeRec,1980+(getCounter(32004,3)*SizeRec));
+        incrementCounter(32004,getCounter(32000,3));
+        clearMemory(0,getCounter(32000,3)*SizeRec);     
+        resetCounter(32000,3);                          
       }else{
-      resetSS();
-      httpPing();
-      if(!ping){gps();httpPostMaster();}
+        gps();
+        incrementCounter(32004,getCounter(32000,3));
+        clearMemory(0,getCounter(32000,3)*SizeRec);     
+        resetCounter(32000,3);
+      }
+      httpPing();     //else
+      uint8_t pingCounter=0;
+      while(ping&&(pingCounter<10)){httpPing();delay(10000);pingCounter++;}
+      if(pingCounter==10){resetSS();}
+      httpPostMaster();
+      httpPostCustom('0');
+      powerDown();
+      attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(intPin), IntRoutine, RISING);
+      Serial.flush();
+      while (wakeUpCounter <= iterations) {
+        LowPower.idle(SLEEP_8S, ADC_OFF, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, SPI_OFF, USART0_ON, TWI_OFF);
+        wakeUpCounter++;
+      }
+      if (wakeUpCounter != (iterations+1)) {                  //Vehicule ignition wakeup
+        powerUp();turnOnGns(); gprsOn(); 
+        wakeUpCounter = 0;
+        httpPostCustom('1');
+      }else {                                                 //WD timer wakeups
+        powerUp();turnOnGns();gprsOn();gps();
+        wakeUpCounter = 0;
+        httpPostCustom('1');
+      }
     }
-    httpPostCustom('0');
-    powerDown();
-    attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(intPin), IntRoutine, RISING);
-    Serial.flush();
-    while (wakeUpCounter <= iterations) {
-      LowPower.idle(SLEEP_8S, ADC_OFF, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, SPI_OFF, USART0_ON, TWI_OFF);
-      wakeUpCounter++;
-    }
-    if (wakeUpCounter != (iterations+1)) {                  //Vehicule ignition wakeup
-      powerUp();turnOnGns(); gprsOn(); 
-      wakeUpCounter = 0;
-      httpPostCustom('1');
-    }else {                                                 //WD timer wakeups
-      powerUp();turnOnGns();gprsOn();
-      wakeUpCounter = 0;
-      httpPostCustom('1');
-    }
-  }
+  
+  //    for (uint16_t a = 32000; a < 32768; a++) {
+  //     fram.write8(a, 0);
+  // } 
+
+  // for(uint16_t i=32000;i<32004;i++){
+  // writeDataFramDebug("0",i);}
+  // for(uint16_t i=32004;i<32006;i++){
+  // writeDataFramDebug("0",i);}
+  
+  // for (uint8_t i = 0; i < 3; i++)
+  // {
+  //   uint16_t val=2;
+  //   incrementCounter(32000,val);
+  // }
+  // uint16_t val1=getCounter(32000,3);
+  //   incrementCounter(32004,getCounter(32000,3));
+  // resetCounter(32000,3);
+  // resetCounter(32004,3);
+
+  // powerDown();
+  // while (1);
 }
+
 void httpPostMaster(){
-  if ((getCounter() < limitToSend)) {
-    if(httpPostFromTo(0,getCounter())){
-      clearMemoryDiff(0,getCounter()*66);
-      clearMemoryDebug(32003);
-    }else{
-      uint8_t j=0;
-      while (ping&&(j<3)){gps();httpPing();gps();j++;}
-      if (j==3){resetSS();}
+  if ((getCounter(32004,3) < limitToSend)) {
+    uint8_t postCounter=0;
+    while((!httpPostFromToSlow(30,(30+getCounter(32004,3))))&&(postCounter<3)){
+      sendAtFram(5000, 31241, 11, "OK", "ERROR", 5);        //"AT+HTTPTERM"
+      delay(1000);postCounter++;
     }
+    if(postCounter==3){uint8_t j=0;while (ping&&(j<3)){httpPing();j++;}if (j==3){resetSS();}}
+    clearMemory(30*SizeRec,(30+getCounter(32004,3))*SizeRec);
+    resetCounter(32004,3);
   }else{
-    uint16_t k = 0;
-    for (uint16_t i = 1; i<=(getCounter()/limitToSend); i++){if(getBatchCounter(i)==1){k=i;}}
-    if (k!=0)
-    {
-      if(httpPostFromTo((k-1)*limitToSend,((k)*limitToSend))){writeDataFramDebug("0",(32080+k));
-      }else{uint8_t j=0;while (ping&&(j<3)){gps();httpPing();gps();j++;}if (j==3){resetSS();}}
-    }else{
-      if((getCounter()%limitToSend)!=0){
-        uint16_t reps= getCounter()/limitToSend;         
-          if(httpPostFromTo(reps*limitToSend,getCounter())){
-            clearMemoryDiff(0,getCounter()*66); 
-            clearMemoryDebug(32003);
-          } 
-      }else{
-        clearMemoryDiff(0,getCounter()*66); 
-        clearMemoryDebug(32003);
+    uint16_t reps = (getCounter(32004,3)/limitToSend);
+    for (uint16_t i = 1; i<=reps; i++){
+      uint8_t postCounter=0;
+      while((!httpPostFromToSlow((30+(i-1)*limitToSend),(30+i*limitToSend)))&&postCounter<3){
+        sendAtFram(5000, 31241, 11, "OK", "ERROR", 5);        //"AT+HTTPTERM"
+        delay(1000);postCounter++;
       }
+      if(postCounter==3){uint8_t j=0;while (ping&&(j<3)){httpPing();j++;}if (j==3){resetSS();}}
+    }
+    if((getCounter(32004,3)%limitToSend)!=0){
+      uint16_t reps= getCounter(32004,3)/limitToSend;         
+      uint8_t postCounter=0;
+      while((!httpPostFromToSlow(reps*limitToSend,getCounter(32004,3)))&&postCounter<3){
+        sendAtFram(5000, 31241, 11, "OK", "ERROR", 5);        //"AT+HTTPTERM"
+        delay(1000);postCounter++;  
+      } 
+      if(postCounter==3){uint8_t j=0;while (ping&&(j<3)){httpPing();j++;}if (j==3){resetSS();}}
+      clearMemory(30*SizeRec,(30+getCounter(32004,3))*SizeRec);
+      resetCounter(32004,3);
+    }else{
+      clearMemory(30*SizeRec,(30+getCounter(32004,3))*SizeRec);
+      resetCounter(32004,3);
     }
   }
 }
@@ -277,6 +320,61 @@ bool httpPostFromTo(uint16_t p1, uint16_t p2) {
     } else OkToSend = false;
     if (OkToSend) {
       if (fireHttpAction(httpTimeout, "AT+HTTPACTION=", ",200,", "ERROR")) {
+        return true;
+      } else {
+        return false;
+      }
+    }
+  }else{return false;}
+  
+}
+bool httpPostFromToSlow(uint16_t p1, uint16_t p2) {
+  if(!ping){
+    bool OkToSend = true;
+    //sendAtFram(5000, 31241, 11, "OK", "ERROR", 5);        //"AT+HTTPTERM"
+    if (sendAtFram(3000, 31254, 11, "OK", "ERROR", 5)) { //"AT+HTTPINIT"
+      if (sendAtFram(3000, 31267, 19, "OK", "ERROR", 5)) { //"AT+HTTPPARA=\"CID\",1"
+        if (sendAtFram(5000, 31609, 73, "OK", "ERROR", 5)) { //"AT+HTTPPARA=\"URL\",\"http://casa-interface.casabaia.ma/commandes.php\""
+          Serial.setTimeout(10000);
+          flushSim();
+          Serial.print("AT+HTTPDATA=");
+          delay(100);
+          //uint16_t p2 = getCounter();
+          // uint16_t Size = (p2 * (SizeRec + 1)) + (p2 * 8) - 1 + 2;
+          uint16_t Size = ((p2-p1) * (SizeRec + 1)) + ((p2-p1) * 8) - 1 + 2;
+          Serial.print(Size);
+          Serial.print(",");
+          uint32_t maxTime = 30000;
+          Serial.println(maxTime);
+          Serial.findUntil("DOWNLOAD", "ERROR");
+          Serial.print("[");
+          for (uint16_t i = p1; i < p2 ; i++)
+          {
+            for (uint16_t j = SizeRec * i; j < (SizeRec * (i + 1)) ; j++)
+            {
+              if (j == (i * SizeRec)) {
+                Serial.print("{\"P\":\"");
+                delay(1);
+              }
+              uint16_t test = fram.read8(j);
+              sprintf(Buffer, "%c", test);
+              Serial.write(Buffer);
+              delay(1);
+            }
+            Serial.print("\"}");
+            delay(1);
+            if (i < p2 - 1) {
+              Serial.write(",");
+              delay(1);
+            }
+          }
+          Serial.print("]");
+          Serial.findUntil("OK", "OK");
+        } else OkToSend = false;
+      } else OkToSend = false;
+    } else OkToSend = false;
+    if (OkToSend) {
+      if (fireHttpAction(2*httpTimeout, "AT+HTTPACTION=", ",200,", "ERROR")) {
         return true;
       } else {
         return false;
@@ -420,13 +518,23 @@ void getWriteFromFramFromZero(uint16_t p1, uint16_t p2) {
     writeDataFram(Buffer);
   }
 }
+void getWriteFromFramFromCustom(uint16_t from, uint16_t to,uint16_t wPosition) {
+  for (uint16_t a = from; a<to; a++)
+  {
+    uint8_t test = fram.read8(a);
+    char Buffer[2] = {0};
+    sprintf(Buffer, "%c", test);
+    writeDataFramDebug(Buffer,wPosition+framWritePositionPostpone);
+    framWritePositionPostpone++;
+  }
+}
 void IntRoutine() {
    wakeUpCounter = iterations;
   Serial.flush();
   detachPinChangeInterrupt(digitalPinToPinChangeInterrupt(intPin));
 }
 void decrementCounter(uint16_t value) {
-  int countVal = getCounter();
+  int countVal = getCounter(32000,3);
   countVal -= value;
   writeDataFramDebug(complete(String(countVal), 3).c_str(), 32000);
 }
@@ -722,22 +830,6 @@ void powerDown() {
     delay(100);
   }
 }
-void blinkLED(int k) {
-  for (int i = 0; i < k; i++) {
-    digitalWrite(A0, HIGH);   // turn the LED on (HIGH is the voltage level)
-    delay(100);                       // wait for a second
-    digitalWrite(A0, LOW);    // turn the LED off by making the voltage LOW
-    delay(100);
-  }
-}
-void blinkLEDFast(int k) {
-  for (int i = 0; i < k; i++) {
-    digitalWrite(A0, HIGH);   // turn the LED on (HIGH is the voltage level)
-    delay(20);                       // wait for a second
-    digitalWrite(A0, LOW);    // turn the LED off by making the voltage LOW
-    delay(20);
-  }
-}
 void simHardReset() {
   digitalWrite(6, HIGH);
   delay(10);
@@ -747,25 +839,27 @@ void simHardReset() {
   powerUp();
   Serial.begin(4800);
 }
-void clearMemory(int size) {
-  for (uint16_t a = 0; a < size; a++) {
+void clearMemory(uint16_t from, uint16_t to) {
+  for (uint16_t a = from; a < to; a++) {
     fram.write8(a, 0);
+    if((to==getCounter(32000,3)*SizeRec)&&(from<30*SizeRec)){framWritePosition = 0;}
+    if((to==getCounter(32004,3)*SizeRec)&&(from>=30*SizeRec)){framWritePositionPostpone = 0;}
   }
-  framWritePosition = 0;
 }
-void clearMemoryDiff(int size, int size1) {
+void clearMemoryDiff(uint16_t size, uint16_t size1) {
   for (uint16_t a = size; a < size1; a++) {
     fram.write8(a, 0);
   }
-  if(size1==getCounter()){framWritePosition = 0;}
+  if((size1==getCounter(32000,3))&&(size<364)){framWritePosition = 0;}
+  if((size1==getCounter(32004,3))&&(size>=364)){framWritePositionPostpone = 0;}
 }
-void clearMemoryDebug(unsigned long size) {
-  for (uint16_t a = 32000; a < size; a++) {
-    fram.write8(a, "0");
+void resetCounter(uint16_t position, uint16_t size) {
+  for (uint16_t a = position; a < (position+size); a++) {
+    writeDataFramDebug("0",a);
   }
 }
 void insertMem() {
-  framWritePosition = getCounter() * SizeRec;
+  framWritePosition = getCounter(32000,3) * SizeRec;
   //getWriteFromFram(31041,13); //"<Track Imei=\""
   char* ourImei=imei.c_str();
   writeDataFram(ourImei);                    //15
@@ -806,14 +900,14 @@ void insertMem() {
   // // // // // // // // // // // //   Wire.beginTransmission(8);
   // // // // // // // // // // // //   Wire.write('r');
   // // // // // // // // // // // //   Wire.endTransmission();
-  incrementCounter();
+  incrementCounter(32000,1);
   // writeDataFramDebug(one,(32080+(getCounter()/limitToSend))-1);
-  if(((getCounter()/limitToSend)>=1)&&(getCounter()%limitToSend)==0){writeDataFramDebug("1",(32080+(getCounter()/limitToSend)));}
+  if(((getCounter(32000,3)/limitToSend)>=1)&&(getCounter(32000,3)%limitToSend)==0){writeDataFramDebug("1",(32080+(getCounter(32000,3)/limitToSend)));}
 }
-void incrementCounter() {
-  int countVal = getCounter();
-  countVal++;
-  writeDataFramDebug(complete(String(countVal), 3).c_str(), 32000);
+void incrementCounter(uint16_t position, uint16_t increment) {
+  int countVal = getCounter(position,3);
+  countVal+=increment;
+  writeDataFramDebug(complete(String(countVal), 3).c_str(), position);
 }
 String complete(String s, int t) {
   while (strlen(s.c_str()) < t) {
@@ -821,9 +915,9 @@ String complete(String s, int t) {
   }
   return s;
 }
-int getCounter() {
+int getCounter(uint16_t initPos,uint8_t length) {
   String retour = " ";
-  for (long i = 32000; i <= 32002; i++) {
+  for (uint16_t i = initPos; i < (initPos+length); i++) {
     char Buffer[5] = {0};
     uint8_t test = fram.read8(i);
     sprintf(Buffer, "%c", test);
@@ -963,12 +1057,5 @@ void clearValue() {
     clearMemoryDiff(32010, 32080);
   }
 }
-bool insertGpsData() {
-  if (getGpsData()) {
-    gpsFailCounter = 0;
-    insertMem();
-    t1 = t2;
-    return true;
-  } else return false;
-}
+
 
