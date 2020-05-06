@@ -62,8 +62,8 @@
   //6  29----5points 8.5secondsSent
   //6  25----4Points 8secondsSend
   int badCharCounter=0;
+  // uint16_t httpTimeout=8000;  //voiture 07 06/05/2020 from 9am to 10am ¬OK
   uint16_t httpTimeout=8000;  //voiture 07
-  // uint16_t httpTimeout=8000;  //voiture 18
   uint64_t lastSend =0;
   uint16_t reps=0;
   char* one="1";
@@ -832,6 +832,7 @@ void sendFromFram(uint16_t start,uint16_t length){
     sprintf(Buffer, "%c", test);
     Serial.print(Buffer);
   }
+
 }
 bool fireHttpAction(long timeout, char* Commande, char* Rep, char* Error) {
   flushSim();
