@@ -1,3 +1,4 @@
+#define MOTO
 //inits
   #include "LowPower.h"
   #include "PinChangeInterrupt.h"
@@ -122,13 +123,24 @@
   void setup() {
     delay(100);
     fram.begin();
-    pinMode(A2, OUTPUT);//VIO
+    //car
+      // pinMode(A2, OUTPUT);//VIO
+      // pinMode(1, OUTPUT);//SS TX
+      // pinMode(A0, OUTPUT);//sim Reset
+      // pinMode(A3, INPUT);//sim Power Status
+      // pinMode(0, INPUT);//SS RX
+      // digitalWrite(A2, HIGH);
+      // digitalWrite(A0, HIGH);
+
+  //Motorcycle
+    pinMode(3, OUTPUT);//VIO
     pinMode(A3, INPUT);//sim Power Status
     pinMode(0, INPUT);//SS RX
     pinMode(1, OUTPUT);//SS TX
-    pinMode(A0, OUTPUT);//sim Reset
-    digitalWrite(A2, HIGH);
-    digitalWrite(A0, HIGH);
+    pinMode(6, OUTPUT);//sim Reset
+    digitalWrite(6, HIGH);
+    digitalWrite(3, HIGH);
+
     powerDown();
     powerUp();
     Serial.begin(4800);
@@ -152,13 +164,14 @@ void loop() {
           uint16_t batchCounter=getCounter()/limitToSend;
           uint16_t startingPoint=batchCounter*limitToSend;
           if(httpPostFromTo(startingPoint,getCounter())){
+          clearMemoryDiff(startingPoint,getCounter()); 
           decrementCounter(getCounter()%limitToSend);
           }// else{uint8_t j=0;while (ping&&(j<3)){gps();httpPing();gps();j++;}if (j==3){resetSS();}}
         }
         t3=t2;
       }
   }else {//if(!digitalRead(8))
-    httpTimeout=18000;
+    httpTimeout=10000;
     while ((getCounter()!=0)&&(!digitalRead(8))){httpPostMaster();}
     httpTimeout=8000;
     httpPostCustom('0');
@@ -166,10 +179,21 @@ void loop() {
     attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(intPin), IntRoutine, RISING);
     Serial.flush();
     while (wakeUpCounter <= iterations) {
+    #ifdef MOTO
+      Wire.beginTransmission(8);
+      Wire.write('f');
+      Wire.endTransmission();
+    #endif
       LowPower.idle(SLEEP_8S, ADC_OFF, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, SPI_OFF, USART0_ON, TWI_OFF);
+      if (digitalRead(8)){wakeUpCounter= iterations;}
       wakeUpCounter++;
     }
     if (wakeUpCounter != (iterations+1)) {                  //Vehicule ignition wakeup
+    #ifdef MOTO
+      Wire.beginTransmission(8);
+      Wire.write('n');
+      Wire.endTransmission();
+    #endif
       powerUp();turnOnGns(); gprsOn(); 
       wakeUpCounter = 0;  
       httpPostCustom('1');
@@ -187,7 +211,13 @@ void httpPostMaster(){
   if (k!=0)
   {
     if(httpPostFromTo((k-1)*limitToSend,((k)*limitToSend))){writeDataFramDebug("0",(32080+k));
-    }else{uint8_t j=0;while (ping&&(j<3)){gps();httpPing();gps();j++;}if (j==3){resetSS();}}
+    }else{
+      uint8_t j=0;
+      while (ping&&(j<3)){
+        gps();httpPing();gps();j++;
+      }
+        if (j==3){resetSS();}
+    }
   }else{
     if((getCounter()%limitToSend)!=0){
       uint16_t reps= getCounter()/limitToSend;         
@@ -686,31 +716,31 @@ void insertMem() {
   //getWriteFromFram(31131,6); //"\" Dh=\""
   writeDataFram(lastUnixTime.c_str());                  //10
   //getWriteFromFram(31137,3); //"\"/>"
+  
+  #ifndef MOTO
   writeDataFram("00");
-  /* Wire.requestFrom(8, 2);
-    char reception[3]={0};
-    if(Wire.available()){
-      Wire.readBytes(reception,2);
-      writeDataFram(reception);
-    }else writeDataFram("00"); */
-  // // // // // // // // // // // // Wire.requestFrom(8, 4);
-  // // // // // // // // // // // // byte lb1; byte hb1; byte lb2; byte hb2;
-  // // // // // // // // // // // // while (Wire.available()){lb1=Wire.read();hb1=Wire.read();lb2=Wire.read();hb2=Wire.read();received=true;}
-  // // // // // // // // // // // //   if(received){
-  // // // // // // // // // // // //     char str1[3];sprintf(str1, "%d", word(hb1,lb1));
-  // // // // // // // // // // // //     char str2[3];sprintf(str2, "%d", word(hb2,lb2));
-  // // // // // // // // // // // //     writeDataFram(str1);
-  // // // // // // // // // // // //     writeDataFram(str2);
-  // // // // // // // // // // // //     received=false;
-  // // // // // // // // // // // //   }else {writeDataFram("00");}
-  // // // // // // // // // // // //   Wire.beginTransmission(8);
-  // // // // // // // // // // // //   Wire.write('r');
-  // // // // // // // // // // // //   Wire.endTransmission();
+  #endif
+
+  #ifdef MOTO
+  Wire.requestFrom(8, 4);
+  byte lb1; byte hb1; byte lb2; byte hb2;
+  while (Wire.available()){lb1=Wire.read();hb1=Wire.read();lb2=Wire.read();hb2=Wire.read();received=true;}
+  if(received){
+    char str1[3];sprintf(str1, "%d", word(hb1,lb1));
+    char str2[3];sprintf(str2, "%d", word(hb2,lb2));
+    writeDataFram(str1);
+    writeDataFram(str2);
+    received=false;
+  }else {writeDataFram("00");}
+  Wire.beginTransmission(8);
+  Wire.write('r');
+  Wire.endTransmission();
+  #endif
   incrementCounter();
   if(((getCounter()/limitToSend)>=1)&&(getCounter()%limitToSend)==0){writeDataFramDebug("1",(32080+(getCounter()/limitToSend)));}
 }
 void incrementCounter() {
-  int countVal = getCounter();
+  int countVal=getCounter();
   countVal++;
   writeDataFramDebug(complete(String(countVal), 3).c_str(), 32000);
 }
