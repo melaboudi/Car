@@ -117,22 +117,22 @@
   bool gps();
   void sendFromFram(uint16_t start,uint16_t length);
   int limitToSend =7;
-  unsigned long te = 28; //le temps entre les envoies
+  unsigned long te = 35; //le temps entre les envoies
   String previousUnixTime="";
   uint16_t iterations=6; //sleeping time = iterations X 8 Seconds
   void setup() {
     delay(100);
     fram.begin();
-    //car
-      // pinMode(A2, OUTPUT);//VIO
-      // pinMode(1, OUTPUT);//SS TX
-      // pinMode(A0, OUTPUT);//sim Reset
-      // pinMode(A3, INPUT);//sim Power Status
-      // pinMode(0, INPUT);//SS RX
-      // digitalWrite(A2, HIGH);
-      // digitalWrite(A0, HIGH);
-
-  //Motorcycle
+#ifndef MOTO
+      pinMode(A2, OUTPUT);//VIO
+      pinMode(1, OUTPUT);//SS TX
+      pinMode(A0, OUTPUT);//sim Reset
+      pinMode(A3, INPUT);//sim Power Status
+      pinMode(0, INPUT);//SS RX
+      digitalWrite(A2, HIGH);
+      digitalWrite(A0, HIGH);
+#endif
+#ifdef MOTO
     pinMode(3, OUTPUT);//VIO
     pinMode(A3, INPUT);//sim Power Status
     pinMode(0, INPUT);//SS RX
@@ -140,7 +140,7 @@
     pinMode(6, OUTPUT);//sim Reset
     digitalWrite(6, HIGH);
     digitalWrite(3, HIGH);
-
+#endif
     powerDown();
     powerUp();
     Serial.begin(4800);
@@ -150,26 +150,37 @@
     }
     gprsOn();httpPing();gps();
     attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(intPin), IntRoutine, RISING);
-    writeDataFramDebug("x",32080);
+    // writeDataFramDebug("x",32079);
   }
 
 void loop() {
-  if(getCounter()>380){clearMemory(31999);clearMemoryDebug(32003);}
+  if(getCounter()>480){clearMemory(31999);clearMemoryDebug(32003);}
   enablePinChangeInterrupt(digitalPinToPinChangeInterrupt(intPin));
   if (digitalRead(8)) {
-      gps();
-      if((t2 - t3) >= (te-8)){
-        httpPing();gps();
-        if(!ping){
+    gps();
+    if((t2 - t3) >= (te-8)){t3=t2;
+      httpPing();gps();
+      if(!ping){
+        if ((getCounter()%limitToSend)!=0)
+        {
           uint16_t batchCounter=getCounter()/limitToSend;
           uint16_t startingPoint=batchCounter*limitToSend;
           if(httpPostFromTo(startingPoint,getCounter())){
-          clearMemoryDiff(startingPoint,getCounter()); 
+          clearMemoryDiff(startingPoint*SizeRec,getCounter()*SizeRec); 
           decrementCounter(getCounter()%limitToSend);
-          }// else{uint8_t j=0;while (ping&&(j<3)){gps();httpPing();gps();j++;}if (j==3){resetSS();}}
+          }
+        }else{
+          uint16_t batchCounter=getCounter()/limitToSend-1;
+          uint16_t startingPoint=batchCounter*limitToSend;
+          if(getBatchCounter(batchCounter)==1){
+            if(httpPostFromTo((batchCounter)*limitToSend,((batchCounter+1)*limitToSend))){
+              clearMemoryDiff(startingPoint*SizeRec,getCounter()*SizeRec); 
+              decrementCounter(limitToSend);
+            }
+          }
         }
-        t3=t2;
       }
+    }
   }else {//if(!digitalRead(8))
     httpTimeout=10000;
     while ((getCounter()!=0)&&(!digitalRead(8))){httpPostMaster();}
@@ -194,7 +205,7 @@ void loop() {
       Wire.write('n');
       Wire.endTransmission();
     #endif
-      powerUp();turnOnGns(); gprsOn(); 
+      powerUp();turnOnGns(); gprsOn();
       wakeUpCounter = 0;  
       httpPostCustom('1');
     }else {                                                 //WD timer wakeups
@@ -206,39 +217,34 @@ void loop() {
   }
 }
 void httpPostMaster(){
-  uint16_t k = 0;
-  if (getCounter()>=limitToSend){for (uint16_t i = 1; i<=(getCounter()/limitToSend); i++){if(getBatchCounter(i)==1){k=i;}}}    
-  if (k!=0)
-  {
-    if(httpPostFromTo((k-1)*limitToSend,((k)*limitToSend))){writeDataFramDebug("0",(32080+k));
-    }else{
-      uint8_t j=0;
-      while (ping&&(j<3)){
-        gps();httpPing();gps();j++;
-      }
-        if (j==3){resetSS();}
-    }
-  }else{
-    if((getCounter()%limitToSend)!=0){
-      uint16_t reps= getCounter()/limitToSend;         
-      if(httpPostFromTo((reps*limitToSend),getCounter())){
-        clearMemoryDiff(0,getCounter()*SizeRec); 
-        clearMemoryDebug(32003);
+  for (uint16_t i = 0; i<(getCounter()/limitToSend); i++){
+    if(getBatchCounter(i)==1){//found=true;
+      if(httpPostFromTo((i)*limitToSend,((i+1)*limitToSend))){
+        writeDataFramDebug("0",(32080+i));
+        clearMemoryDiff((i)*limitToSend*SizeRec,((i+1)*limitToSend*SizeRec));
       }else{
-        uint8_t j=0;
-        while (ping&&(j<3)){httpPing();j++;}
-        if (j==3){resetSS();}
-        if(httpPostFromTo(reps*limitToSend,getCounter())){
-          clearMemoryDiff(0,getCounter()*SizeRec); 
-          clearMemoryDebug(32003);
-        }
+        uint8_t j=0;while (ping&&(j<3)){httpPing();j++;}if (j==3){resetSS();}
+        httpPostFromTo((i)*limitToSend,((i+1)*limitToSend));
+        writeDataFramDebug("0",(32080+i));
+        clearMemoryDiff((i)*limitToSend*SizeRec,((i+1)*limitToSend*SizeRec));
       }
-    }else{
-      clearMemoryDiff(0,getCounter()*SizeRec); 
-      clearMemoryDebug(32003);
     }
   }
+  if((getCounter()%limitToSend)!=0){
+    uint16_t reps= (getCounter()/limitToSend);         
+    if(httpPostFromTo((reps*limitToSend),getCounter())){
+      clearMemoryDiff(reps*limitToSend*SizeRec,getCounter()*SizeRec); 
+      clearMemoryDebug(32003);
+    }else{
+      uint8_t j=0;while (ping&&(j<3)){httpPing();j++;}if (j==3){resetSS();}
+      httpPostFromTo(reps*limitToSend,getCounter());
+      clearMemoryDiff(reps*limitToSend*SizeRec,getCounter()*SizeRec); 
+      clearMemoryDebug(32003);
+    }
+  }else{clearMemoryDebug(32003);}
 }
+
+
 bool gps(){
   if (!getGpsData()) {
       if (!getGnsStat()) {if (gnsFailCounter == 2) {resetSS();} else {turnOnGns();delay(1000);gnsFailCounter++;}}
@@ -304,7 +310,7 @@ bool httpPostFromTo(uint16_t p1, uint16_t p2) {
 }
 void httpPing() {
   bool OkToSend = true;
-  if (sendAtFram(3000, 31254, 11, "OK", "ERROR", 5)) { //"AT+HTTPINIT"
+  if (sendAtFram(2500, 31254, 11, "OK", "ERROR", 5)) { //"AT+HTTPINIT"
     if (sendAtFram(3000, 31267, 19, "OK", "ERROR", 5)) { //"AT+HTTPPARA=\"CID\",1"
       if (sendAtFram(15000, 31609, 73, "OK", "ERROR", 5)) { //"AT+HTTPPARA=\"URL\",\"http://casa-interface.casabaia.ma/commandes.php\""
         Serial.setTimeout(10000);
@@ -737,7 +743,7 @@ void insertMem() {
   Wire.endTransmission();
   #endif
   incrementCounter();
-  if(((getCounter()/limitToSend)>=1)&&(getCounter()%limitToSend)==0){writeDataFramDebug("1",(32080+(getCounter()/limitToSend)));}
+  if((getCounter()%limitToSend)==0){writeDataFramDebug("1",(32079+(getCounter()/limitToSend)));}
 }
 void incrementCounter() {
   int countVal=getCounter();
