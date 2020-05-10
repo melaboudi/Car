@@ -119,7 +119,7 @@
   int limitToSend =7;
   unsigned long te = 35; //le temps entre les envoies
   String previousUnixTime="";
-  uint16_t iterations=6; //sleeping time = iterations X 8 Seconds
+  uint16_t iterations=880; //sleeping time = iterations X 8 Seconds
   void setup() {
     delay(100);
     fram.begin();
