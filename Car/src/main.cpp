@@ -160,7 +160,7 @@ void loop() {
     gps();
     if((t2 - t3) >= (te-8)){t3=t2;
       httpPing();gps();
-      if(!ping){
+      // if(!ping){
         if ((getCounter()%limitToSend)!=0)
         {
           uint16_t batchCounter=getCounter()/limitToSend;
