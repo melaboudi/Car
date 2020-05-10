@@ -154,14 +154,14 @@
   }
 
 void loop() {
-  if(getCounter()>480){clearMemory(31999);clearMemoryDebug(32003);}
+  if(getCounter()>480){clearMemory(31999);clearMemoryDebug(32003);resetSS();}
   enablePinChangeInterrupt(digitalPinToPinChangeInterrupt(intPin));
-  if (digitalRead(8)) {
-    gps();
-    if((t2 - t3) >= (te-8)){t3=t2;
-      httpPing();gps();
-      // if(!ping){
-        if ((getCounter()%limitToSend)!=0)
+  if (digitalRead(8)) {            //if the engine is powered on
+    gps();                         //get a new gps point all the time
+    if((t2 - t3) >= (te-8)){t3=t2; //wait until it's 8 seconds before it's time to send
+      httpPing();gps();            //Ping the server and get a new gps point
+      if(!ping){
+        if ((getCounter()%limitToSend)!=0) //if we have collected any new points since the last send, send them
         {
           uint16_t batchCounter=getCounter()/limitToSend;
           uint16_t startingPoint=batchCounter*limitToSend;
@@ -169,7 +169,7 @@ void loop() {
           clearMemoryDiff(startingPoint*SizeRec,getCounter()*SizeRec); 
           decrementCounter(getCounter()%limitToSend);
           }
-        }else{
+        }else{                     //if we have collected a complete batch, send it
           uint16_t batchCounter=getCounter()/limitToSend-1;
           uint16_t startingPoint=batchCounter*limitToSend;
           if(getBatchCounter(batchCounter)==1){
@@ -181,7 +181,7 @@ void loop() {
         }
       }
     }
-  }else {//if(!digitalRead(8))
+  }else {                          //if the engine is powered off
     httpTimeout=10000;
     while ((getCounter()!=0)&&(!digitalRead(8))){httpPostMaster();}
     httpTimeout=8000;
