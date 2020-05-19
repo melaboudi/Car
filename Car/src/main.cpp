@@ -154,7 +154,7 @@
   }
 
 void loop() {
-  if(getCounter()>480){clearMemory(31999);clearMemoryDebug(32003);resetSS();}
+  if(getCounter()>480){clearMemory(31999);clearMemoryDebug(32003);resetSS();} 
   enablePinChangeInterrupt(digitalPinToPinChangeInterrupt(intPin));
   if (digitalRead(8)) {            //if the engine is powered on
     gps();                         //get a new gps point all the time
