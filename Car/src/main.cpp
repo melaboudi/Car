@@ -1,4 +1,4 @@
-#define MOTO
+// #define MOTO
 //inits
   #include "LowPower.h"
   #include "PinChangeInterrupt.h"
@@ -148,7 +148,8 @@
     while (getGsmStat() != 1) {
       delay(500);
     }
-    gprsOn();httpPing();gps();
+    gprsOn();httpPing();
+    while (!gps());
     attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(intPin), IntRoutine, RISING);
     // writeDataFramDebug("x",32079);
   }
@@ -520,7 +521,7 @@ bool getGpsData() {
  
     if (onOff) {
       onOff = false;}
-    if ((fixStatus.toInt() == 1) && (latitude.toInt() != 0) && (longitude.toInt() != 0)&&(badCharCounter==0)&&(lastUnixTime!=previousUnixTime)) {
+    if ((fixStatus.toInt() == 1) && (latitude.toInt() > 20) && (longitude.toInt() <0)&&(badCharCounter==0)&&(lastUnixTime!=previousUnixTime)) {
       previousUnixTime=lastUnixTime;
       started = false;
       restarted=false;
