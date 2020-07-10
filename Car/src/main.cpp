@@ -628,6 +628,7 @@ void writeDataFram(char* dataFram) {
   uint8_t dataFramSize = strlen(dataFram);
   for (unsigned long i = framWritePosition; i <= (dataFramSize + framWritePosition); i++)
   {
+    delay(1);
     fram.write8(i, dataFram[(i - framWritePosition)]);
   } framWritePosition += (dataFramSize) ;
 }
@@ -635,6 +636,7 @@ void writeDataFramDebug(char* dataFram, long p1) {
   //for (unsigned long i = p1; i <= (p1 + strlen(dataFram)); i++)
   for (unsigned long i = p1; i < (p1 + strlen(dataFram)); i++)
   {
+    delay(1);
     fram.write8(i, dataFram[(i - p1)]);
   }
 }
@@ -704,7 +706,7 @@ void insertMem() {
   // char* ourImei=imei.c_str();
   // writeDataFram(ourImei);                    //15
   //getWriteFromFram(31054,26); //"\" Fc=\"WGS84\" FixPosition=\""
-  writeDataFramDebug("9",32767);
+  // writeDataFramDebug("9",32767);
   writeDataFram(fixStatus.c_str());                 //1
   //getWriteFromFram(31080,7); //"\" Lat=\""
   writeDataFram(latitude.c_str());                  //10
@@ -717,7 +719,7 @@ void insertMem() {
   //getWriteFromFram(31108,7); //"\" Cap=\""
   writeDataFram(course.c_str());                  //6
   //getWriteFromFram(31115,16); //"\" BatteryLevel=\""
-  writeDataFramDebug("8",32766);
+  // writeDataFramDebug("8",32766);
   writeDataFram(batteryLevel().c_str());              //3
   //getWriteFromFram(31131,6); //"\" Dh=\""
   writeDataFram(lastUnixTime.c_str());                  //10
